@@ -29,9 +29,14 @@ const { User } = require('./models/user');
 
 // Testing Route
 app.get('/test', async (req, res) => {
-    const { creatorId, friends, displayName, image, time } = req.body;
+    const { userId } = req.body;
+    var currentTime = getLocalTime();
     try {
-        conversationTest(creatorId, friends, displayName, image, time);
+        //use testingSocketId
+        const user = await User.findOneAndUpdate({ "_id": mongoose.Types.ObjectId(userId) }, { "lastActive": currentTime, "socketId": 'testingSocketId', "status": "Online" }, { new: true });
+        console.log("conversation size :" + user["conversations"].length);
+        var result = await Conversation.getAllConversationByConList(user["conversations"], userId);
+        console.log("result size : " + result.length)
         res.send(result)
     } catch (error) {
         console.log(error)
@@ -64,7 +69,7 @@ io.on('connection', async (socket) => {
         const user = await User.findOneAndUpdate({ "_id": mongoose.Types.ObjectId(userId) }, { "lastActive": currentTime, "socketId": socket.id, "status": "Online" }, { new: true })
         io.emit("statusChange", { "userId": user._id, "status": user.status, "lastActive": user.lastActive })
         try {
-            const conversations = await Conversation.getAllConversationByUser(userId);
+            const conversations = await Conversation.getAllConversationByConList(user['conversations'], userId);
             conversations.forEach(chat => {
                 socket.join(chat._id.toString())
             })
@@ -83,35 +88,23 @@ io.on('connection', async (socket) => {
         }
     })
 
-    socket.on('join', async (data) => {
-        //members [{"userid":"socketId"},{"userid":"socketId"}]
-        var { creatorId, members, displayName, image, time } = data;
-        var membersIds = [];
-        var membersSockets = [];
-        console.log("members is " + members)
-        members.forEach(value => {
-            console.log("VAlue is " + value)
-            membersIds.push(value.id)
-            membersSockets.push(value.socketId)
-        })
-        try {
-            var chat = await getConversation(creatorId, membersIds, displayName, image, time)
-            const messages = await Message.find({ "conversationId": chat._id }).sort({ _id: -1 });
-            socket.join(chat._id.toString());
-            //group read may be not work cause readByFriend while refractor
-            socket.emit('joined', { "messages": messages, "conversationId": chat._id, "readByFriend": chat.readBy.some(r => membersIds.includes(r) && r != creatorId) });
-
-
-            var allSockets = io.of("/").sockets;
-            for (const [_, socket] of allSockets) {
-                if (membersSockets.includes(socket.id)) {
-                    console.log("Same socket is " + socket.id)
-                    socket.join(chat._id.toString())
-                }
-            }
-        } catch (error) {
-            console.log(error.message);
+    socket.on('join', async (chat) => {
+        console.log(chat);
+        await Message.updateMany({ "conversationId": mongoose.Types.ObjectId(chat._id) }, { "$addToSet": { "readBy": mongoose.Types.ObjectId(chat.joinedBy) } });
+        const messages = await Message.find({ "conversationId": mongoose.Types.ObjectId(chat._id) }).sort({ _id: -1 });
+        socket.join(chat._id.toString());
+        //group read may be not work cause readByFriend while refractor
+        socket.emit('joined', { "messages": messages, "conversationId": chat._id });
+        if (messages.length > 0) {
+            io.to(chat._id).emit('read', { "message": messages[0] })
         }
+        // var allSockets = io.of("/").sockets;
+        // for (const [_, socket] of allSockets) {
+        //     if (membersSockets.includes(socket.id)) {
+        //         console.log("Same socket is " + socket.id)
+        //         socket.join(chat._id.toString())
+        //     }
+        // }
     })
 
     socket.on("disconnect", async (reason) => {
@@ -136,20 +129,21 @@ io.on('connection', async (socket) => {
     })
 
     socket.on("read", async (data) => {
-        const conversation = await Conversation.findOneAndUpdate({ "_id": data['conversationId'] }, { $addToSet: { "readBy": data['readBy'] } }, { new: true });
-        io.to(data['conversationId']).emit("read", { "readBy": data['readBy'] });
-        console.log(conversation);
+        const { _id, readBy } = data;
+        const message = await Message.findOneAndUpdate({ "_id": _id }, { $addToSet: { "readBy": mongoose.Types.ObjectId(readBy) } }, { new: true });
+        io.to(message.conversationId.toString()).emit("read", { message })
     })
 
     // Message Uplod to database
     socket.on('message', async (msg) => {
         const { conversationId, sender, senderName, text, time } = msg;
-        var result = await Message.create({ conversationId, sender, text, time });
-        const conversation = await Conversation.findOneAndUpdate({ "_id": conversationId }, { "text": text, "readBy": [sender], "time": time });
+        console.log("conversationId...." + conversationId);
+        var result = await Message.create({ conversationId, sender, text, "readBy": [mongoose.Types.ObjectId(sender)], time });
+        const conversation = await Conversation.findOneAndUpdate({ "_id": conversationId }, { "text": text, "time": time });
         if (conversation) {
             result._doc.senderName = senderName;
             io.to(conversationId).emit("message", result);
-            socket.broadcast.in(conversationId).emit("notifyMessage", result);
+            // socket.broadcast.in(conversationId).emit("notifyMessage", result);
         }
     })
 

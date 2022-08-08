@@ -22,6 +22,10 @@ const MessageScheme = mongoose.Schema(
             type: String,
             required: [true, 'Please Enter an time'],
             default: new Date()
+        },
+        readBy: {
+            type: Array,
+            required: [true, 'Must be provided one item']
         }
     }
 )

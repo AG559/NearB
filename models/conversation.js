@@ -101,65 +101,104 @@ ConversationSchema.statics.getAllConversationByUser = async (userId) => {
     }
 }
 
-ConversationSchema.statics.getConversation = async (myId, friendId) => {
-    try {
-        const conversation = await User.aggregate([
-            {
-                $match: {
-                    "_id": { $in: [mongoose.Types.ObjectId(myId), mongoose.Types.ObjectId(friendId)] }
-                }
-            },
-            {
-                $group: {
-                    "_id": "gp-id",
-                    "user1": { "$first": "$$ROOT" },
-                    "user2": { "$last": "$$ROOT" },
-                    "chat1": { "$first": "$conversations" },
-                    "chat2": { "$last": "$conversations" }
-                }
-            },
-            {
-                $project: {
-                    "_id": 0,
-                    "members": ["$user1", "$user2"],
-                    "chatId": {
-                        "$setIntersection": ["$chat1", "$chat2"]
-                    }
-                }
-            },
-            { $unwind: "$chatId" },
-            { $set: { chatId: { $toObjectId: "$chatId" } } },
-            {
-                $lookup: {
-                    from: 'conversations',
-                    localField: 'chatId',
-                    foreignField: '_id',
-                    as: 'conversation'
-                }
-            },
-            { $unwind: "$conversation" },
-            {
-                $project: {
-                    "_id": "$conversation._id",
-                    "members": 1,
-                    "displayName": "$conversation.displayName",
-                    "text": "$conversation.text",
-                    "readBy": "$conversation.readBy",
-                    "image": "$conversation.image",
-                    "time": "$conversation.time",
-                    "creatorId": "$conversation.creatorId",
+ConversationSchema.statics.getAllConversationByConList = async (conversationIdList, userId) => {
+    console.log(userId);
+    const conversations = await this.Conversation.aggregate([
+        {
+            '$match': {
+                '_id': {
+                    '$in': [...conversationIdList]
                 }
             }
-        ]);
-        if (conversation == null || conversation.length == 0) {
-            console.log("conversation is empty " + conversation)
-            return [];
+        }, {
+            '$addFields': {
+                'members': {
+                    '$map': {
+                        'input': '$members',
+                        'in': {
+                            'userId': {
+                                '$toObjectId': '$$this'
+                            }
+                        }
+                    }
+                }
+            }
+        }, {
+            '$lookup': {
+                'from': 'users',
+                'localField': 'members.userId',
+                'foreignField': '_id',
+                'as': 'userInfo'
+            }
+        }, {
+            '$project': {
+                '_id': 1,
+                'displayName': 1,
+                'creatorId': 1,
+                'text': 1,
+                'time': 1,
+                'image': 1,
+                'members': {
+                    '$map': {
+                        'input': '$members',
+                        'as': 'member',
+                        'in': {
+                            '$mergeObjects': [
+                                '$$member', {
+                                    '$first': {
+                                        '$filter': {
+                                            'input': '$userInfo',
+                                            'cond': {
+                                                '$eq': [
+                                                    '$$this._id', '$$member.userId'
+                                                ]
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        }, {
+            '$lookup': {
+                'from': 'messages',
+                'localField': '_id',
+                'foreignField': 'conversationId',
+                'as': 'messages'
+            }
+        }, {
+            '$addFields': {
+                'unreadCount': {
+                    '$size': {
+                        '$filter': {
+                            'input': '$messages',
+                            'as': 'message',
+                            'cond': {
+                                '$cond': [
+                                    {
+                                        '$gt': [
+                                            {
+                                                '$size': {
+                                                    '$setIntersection': [
+                                                        [mongoose.Types.ObjectId(userId)], '$$message.readBy'
+                                                    ]
+                                                }
+                                            }, 0
+                                        ]
+                                    }, false, true
+                                ]
+                            }
+                        }
+                    }
+                },
+                "messages": "$$REMOVE"
+            }
         }
-        return conversation[0];
-    } catch (error) {
-        console.log(error);
-        throw error;
-    }
+    ]);
+    // console.log("conversations : " + conversations)
+    return conversations;
 }
 
 module.exports.Conversation = mongoose.model('conversation', ConversationSchema);
