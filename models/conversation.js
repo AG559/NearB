@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-const { User } = require('./user');
 
 const ConversationSchema = mongoose.Schema({
     displayName: {
@@ -9,10 +8,6 @@ const ConversationSchema = mongoose.Schema({
     text: {
         type: String,
         default: "Welcome...",
-    },
-    readBy: {
-        type: Array,
-        default: []
     },
     image: {
         type: String,
@@ -102,7 +97,6 @@ ConversationSchema.statics.getAllConversationByUser = async (userId) => {
 }
 
 ConversationSchema.statics.getAllConversationByConList = async (conversationIdList, userId) => {
-    console.log(userId);
     const conversations = await this.Conversation.aggregate([
         {
             '$match': {

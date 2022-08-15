@@ -3,7 +3,7 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 const app = express();
 const server = require('http').createServer(app);
-const io = require('socket.io')(server, { cors: { origin: "*" } });
+const io = require('socket.io')(server, { cors: { origin: "*" }, pingTimeout: 1000, pingInterval: 1000 });
 
 app.use(express.static('public'))
 app.use(express.json())
@@ -16,14 +16,14 @@ const conversationRoute = require('./routes/conversationRoute');
 const messageRoute = require('./routes/messageRoute');
 const { Conversation } = require('./models/conversation');
 const { Message } = require('./models/message');
-const { createConversation, getConversation } = require('./controllers/conversationController')
+const { User } = require('./models/user');
+const { getConversation } = require('./controllers/conversationController');
 
 
 // Middleware
 const { checkUser } = require('./middleware/authWare');
 const { errorHandler } = require('./middleware/errorHandler');
 const { isValidJwt, getLocalTime } = require('./utils/global');
-const { User } = require('./models/user');
 
 
 
@@ -79,32 +79,52 @@ io.on('connection', async (socket) => {
         }
     })
 
-    socket.on('refreshConversation', async (userId) => {
-        try {
-            const conversations = await Conversation.getAllConversationByUser(userId);
-            socket.emit('init', conversations)
-        } catch (error) {
-            console.log(error);
-        }
-    })
-
     socket.on('join', async (chat) => {
-        console.log(chat);
-        await Message.updateMany({ "conversationId": mongoose.Types.ObjectId(chat._id) }, { "$addToSet": { "readBy": mongoose.Types.ObjectId(chat.joinedBy) } });
-        const messages = await Message.find({ "conversationId": mongoose.Types.ObjectId(chat._id) }).sort({ _id: -1 });
-        socket.join(chat._id.toString());
-        //group read may be not work cause readByFriend while refractor
-        socket.emit('joined', { "messages": messages, "conversationId": chat._id });
-        if (messages.length > 0) {
-            io.to(chat._id).emit('read', { "message": messages[0] })
+        console.log("call join..........");
+        var { _id, joinedBy, members } = chat;
+        var isNew = false;
+        var messages = [];
+        var memberIds = [];
+        var memberSockets = [];
+        for (const [key, value] of Object.entries(members)) {
+            memberIds.push(key)
+            memberSockets.push(value)
         }
-        // var allSockets = io.of("/").sockets;
-        // for (const [_, socket] of allSockets) {
-        //     if (membersSockets.includes(socket.id)) {
-        //         console.log("Same socket is " + socket.id)
-        //         socket.join(chat._id.toString())
-        //     }
-        // }
+
+        //check Conversation
+        if (_id == null) {
+            var { conversation, isNew } = await getConversation({ "creatorId": joinedBy, "members": memberIds })
+            _id = conversation._id
+            isNew = isNew
+        }
+
+        //Join with all sockets 
+        var allSockets = io.of("/").sockets;
+        for (const [_, socket] of allSockets) {
+            if (memberSockets.includes(socket.id)) {
+                console.log("Same socket is " + socket.id)
+                socket.join(_id.toString())
+            }
+        }
+        socket.join(_id.toString())
+
+        //check isNew Conversation
+        if (isNew) {
+            var result = await Conversation.getAllConversationByConList([conversation._id])
+            console.log(result)
+            io.to(_id.toString()).emit("newConversation", result)
+        } else {
+            await Message.updateMany({ "conversationId": mongoose.Types.ObjectId(_id) }, { "$addToSet": { "readBy": mongoose.Types.ObjectId(joinedBy) } });
+            messages = await Message.find({ "conversationId": mongoose.Types.ObjectId(_id) }).sort({ _id: -1 });
+        }
+
+        //Finish Joined emit
+        socket.emit('joined', { "messages": messages, "conversationId": _id });
+        if (messages.length > 0) {
+            if (messages[0]['sender'] != joinedBy) {
+                io.to(_id.toString()).emit('read', { "message": messages[0] })
+            }
+        }
     })
 
     socket.on("disconnect", async (reason) => {
@@ -115,7 +135,6 @@ io.on('connection', async (socket) => {
                 return;
             } else {
                 try {
-                    console.log(user);
                     io.emit("statusChange", { "userId": user._id, "status": user.status, "lastActive": user.lastActive })
                     console.log("Disconnect " + socket.id + reason)
                 } catch (error) {
