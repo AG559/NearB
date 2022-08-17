@@ -81,7 +81,7 @@ io.on('connection', async (socket) => {
 
     socket.on('join', async (chat) => {
         console.log("call join..........");
-        var { _id, joinedBy, members } = chat;
+        var { _id, joinedBy, members, displayName } = chat;
         var isNew = false;
         var messages = [];
         var memberIds = [];
@@ -93,7 +93,7 @@ io.on('connection', async (socket) => {
 
         //check Conversation
         if (_id == null) {
-            var { conversation, isNew } = await getConversation({ "creatorId": joinedBy, "members": memberIds })
+            var { conversation, isNew } = await getConversation({ "creatorId": joinedBy, "members": memberIds, "displayName": displayName })
             _id = conversation._id
             isNew = isNew
         }
