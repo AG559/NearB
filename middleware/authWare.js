@@ -14,6 +14,7 @@ const checkUser = (req, res, next) => {
             next();
         })
     } catch (error) {
+        console.log("Check User error is " + authHeader)
         throw Error(error.message);
     }
 }

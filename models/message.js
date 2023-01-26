@@ -2,6 +2,10 @@ const express = require('express');
 const mongoose = require('mongoose');
 const MessageScheme = mongoose.Schema(
     {
+        _id: {
+            type: String,
+            required: [true, "Id is required"]
+        },
         conversationId: {
             required: [true, "Conversation Id is required"],
             type: mongoose.Types.ObjectId
@@ -12,7 +16,6 @@ const MessageScheme = mongoose.Schema(
         },
         text: {
             type: String,
-            required: [true, 'Message text is required'],
         },
         isLiked: {
             type: Boolean,
@@ -26,6 +29,15 @@ const MessageScheme = mongoose.Schema(
         readBy: {
             type: Array,
             required: [true, 'Must be provided one item']
+        },
+        type: {
+            type: String,
+            required: [true, 'Must be provided one type'],
+            default: "text"
+        },
+        files: {
+            type: Array,
+            default: []
         }
     }
 )

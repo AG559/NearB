@@ -1,3 +1,5 @@
+
+const moment = require('moment');
 const express = require('express');
 require('dotenv').config();
 const mongoose = require('mongoose');
@@ -45,8 +47,32 @@ app.get('/test', async (req, res) => {
 });
 
 
+const multer = require('multer');
+var storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, "uploads/")
+    },
+    filename: function (req, file, cb) {
+        var filename = req.body.filename;
+        console.log("filename is " + filename)
+        cb(null, filename)
+    }
+})
+var upload = multer({ storage: storage })
+app.post("/api/file", upload.array("photos", 60), (req, res, next) => {
+    console.log("Upload files are " + req.body.filename)
+    res.json(req.body.filename)
+})
+
+app.get("/api/file/:filename", checkUser, (req, res) => {
+    console.log("Download files are " + req.params.filename)
+    res.sendFile(__dirname + "/uploads/" + req.params.filename)
+})
+
+
 // Routes
 app.use(authRoute);
+app.use('/uploads', [checkUser, express.static('uploads')])
 app.use("/users", checkUser, userRoute);
 app.use("/conversations", checkUser, conversationRoute);
 app.use(checkUser, messageRoute);
@@ -80,8 +106,8 @@ io.on('connection', async (socket) => {
     })
 
     socket.on('join', async (chat) => {
-        console.log("call join..........");
         var { _id, joinedBy, members, displayName } = chat;
+        console.log("call join..." + _id);
         var isNew = false;
         var messages = [];
         var memberIds = [];
@@ -115,7 +141,7 @@ io.on('connection', async (socket) => {
             io.to(_id.toString()).emit("newConversation", result)
         } else {
             await Message.updateMany({ "conversationId": mongoose.Types.ObjectId(_id) }, { "$addToSet": { "readBy": mongoose.Types.ObjectId(joinedBy) } });
-            messages = await Message.find({ "conversationId": mongoose.Types.ObjectId(_id) }).sort({ _id: -1 });
+            messages = await Message.find({ "conversationId": mongoose.Types.ObjectId(_id) }).sort({ time: -1 });
         }
 
         //Finish Joined emit
@@ -141,10 +167,7 @@ io.on('connection', async (socket) => {
                     console.log(error.message)
                 }
             }
-
         })
-
-
     })
 
     socket.on("read", async (data) => {
@@ -155,9 +178,10 @@ io.on('connection', async (socket) => {
 
     // Message Uplod to database
     socket.on('message', async (msg) => {
-        const { conversationId, sender, senderName, text, time } = msg;
+        const { id, conversationId, sender, senderName, text, type, files, time } = msg;
+        console.log("Id is " + id);
         console.log("conversationId...." + conversationId);
-        var result = await Message.create({ conversationId, sender, text, "readBy": [mongoose.Types.ObjectId(sender)], time });
+        var result = await Message.create({ "_id": id, conversationId, sender, text, type, files, "readBy": [mongoose.Types.ObjectId(sender)], "time": Date.now() });
         const conversation = await Conversation.findOneAndUpdate({ "_id": conversationId }, { "text": text, "time": time });
         if (conversation) {
             result._doc.senderName = senderName;

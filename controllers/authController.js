@@ -1,8 +1,6 @@
 const { User } = require("../models/user");
 const jwt = require('jsonwebtoken');
 const handleError = (err) => {
-    console.log(err.message);
-
     const error = { 'email': '', 'password': '' };
 
     if (err.message == "Incorrect Email") {
