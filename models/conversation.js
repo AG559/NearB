@@ -92,7 +92,7 @@ ConversationSchema.statics.getAllConversationByUser = async (userId) => {
         return conversation;
     } catch (error) {
         console.log(error)
-        throw Error(error);
+        throw new Error(error);
     }
 }
 

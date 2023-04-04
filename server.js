@@ -9,7 +9,6 @@ const io = require('socket.io')(server, { cors: { origin: "*" }, pingTimeout: 10
 
 app.use(express.static('public'))
 app.use(express.json())
-
 app.set('view engine', 'ejs');
 
 const authRoute = require('./routes/authRoute');
@@ -24,7 +23,7 @@ const { getConversation } = require('./controllers/conversationController');
 
 // Middleware
 const { checkUser } = require('./middleware/authWare');
-const { errorHandler } = require('./middleware/errorHandler');
+const globalErrorHandler = require('./middleware/errorHandler');
 const { isValidJwt, getLocalTime } = require('./utils/global');
 
 
@@ -76,8 +75,7 @@ app.use('/uploads', [checkUser, express.static('uploads')])
 app.use("/users", checkUser, userRoute);
 app.use("/conversations", checkUser, conversationRoute);
 app.use(checkUser, messageRoute);
-
-app.use(errorHandler);
+app.use(globalErrorHandler);
 
 io.use(async (socket, next) => {
     console.log(socket.handshake.auth);
@@ -90,6 +88,35 @@ io.use(async (socket, next) => {
 })
 
 io.on('connection', async (socket) => {
+    try {
+        // Update user's lastActive time, socketId and status on connection
+        const userId = socket.handshake.query.userId;
+        const currentTime = getLocalTime();
+        const user = await User.findOneAndUpdate(
+            { _id: mongoose.Types.ObjectId(userId) },
+            { lastActive: currentTime, socketId: socket.id, status: 'Online' },
+            { new: true }
+        );
+
+        // Emit statusChange event to all clients
+        io.emit('statusChange', {
+            userId: user._id,
+            status: user.status,
+            lastActive: user.lastActive
+        });
+
+        // Join user's conversations
+        const conversations = await Conversation.getAllConversationByConList(
+            user.conversations,
+            userId
+        );
+        conversations.forEach((chat) => {
+            socket.join(chat._id.toString());
+        });
+        socket.emit('init', conversations);
+    } catch (error) {
+        console.log(error);
+    }
     socket.on('start', async (userId) => {
         var currentTime = getLocalTime();
         const user = await User.findOneAndUpdate({ "_id": mongoose.Types.ObjectId(userId) }, { "lastActive": currentTime, "socketId": socket.id, "status": "Online" }, { new: true })
@@ -188,6 +215,10 @@ io.on('connection', async (socket) => {
             io.to(conversationId).emit("message", result);
             // socket.broadcast.in(conversationId).emit("notifyMessage", result);
         }
+    })
+
+    socket.on('statusChange', (msg) => {
+        console.log("StatusChange is " + msg)
     })
 
 })

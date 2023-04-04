@@ -1,9 +1,10 @@
 const express = require('express');
-const {login_get,login_post,signup_get,signup_post} = require('../controllers/authController');
+const { signInGet, signInPost, signUpGet, signUpPost, signOutGet } = require('../controllers/authController');
 const router = express.Router();
-router.get('/signup',signup_get)
-router.get('/login',login_get)
-router.post('/signup',signup_post)
-router.post('/login',login_post)
+router.get('/sign-up', signUpGet)
+router.get('/sign-in', signInGet)
+router.post('/sign-up', signUpPost)
+router.post('/sign-in', signInPost)
+router.get('/sign-out', signOutGet)
 
-module.exports =router;
+module.exports = router;

@@ -1,6 +1,9 @@
+// User model for MongoDB
 const mongoose = require('mongoose');
 const { isEmail } = require('validator');
 const bcrypt = require('bcrypt');
+
+// Define user schema
 const userScheme = mongoose.Schema({
     socketId: {
         type: String,
@@ -38,12 +41,14 @@ const userScheme = mongoose.Schema({
     }
 })
 
+// Hash password before saving
 userScheme.pre('save', async function (next) {
     const salt = await bcrypt.genSalt();
-    this.password = await bcrypt.hash(this.password, salt);
+    this.password = bcrypt.hash(this.password, salt);
     next();
 })
 
+// Login method for user model
 userScheme.statics.login = async function (email, password) {
     const user = await this.findOne({ email });
     if (user) {
@@ -51,10 +56,10 @@ userScheme.statics.login = async function (email, password) {
         if (isValid) {
             return user;
         } else {
-            throw Error('Incorrect Password')
+            throw new Error('Incorrect Password')
         }
     } else {
-        throw Error('Incorrect Email')
+        throw new Error('Incorrect Email')
     }
 }
 

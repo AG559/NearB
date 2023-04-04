@@ -1,53 +1,46 @@
 const { User } = require("../models/user");
+const { IncorrectEmailError, IncorrectPasswordError, DuplicateEmailError } = require("../utils/errors");
 const jwt = require('jsonwebtoken');
-const handleError = (err) => {
-    const error = { 'email': '', 'password': '' };
 
-    if (err.message == "Incorrect Email") {
-        error['email'] = 'Email is not register';
-        return error;
-    }
-
-    if (err.message == "Incorrect Password") {
-        error['password'] = 'Password is Incorrect'
-        return error;
-    }
-
-    // Duplicate error
-    if (err.code === 11000) {
-        error['email'] = 'Email is already Register'
-        return error;
-    }
-
-    // Validator error
-    if (err.message.includes('user validation failed')) {
-        Object.values(err.errors).forEach(({ properties }) => {
-            error[properties.path] = properties.message;
-        })
-        return error;
-    }
-}
 const maxAge = 1000 * 60 * 60 * 24;
 const createToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: maxAge });
 
-const login_get = (req, res) => res.render('login');
-const signup_get = (req, res) => res.render('signup');
+const handleError = (err) => {
+    switch (true) {
+        case err.message === 'Incorrect Email':
+            throw new IncorrectEmailError();
+        case err.message === 'Incorrect Password':
+            throw new IncorrectPasswordError();
+        case err.code === 11000:
+            throw new DuplicateEmailError();
+        case err.message.includes('user validation failed'):
+            const error = { statusCode: 400 };
+            Object.values(err.errors).forEach(({ properties }) => {
+                error[properties.path] = properties.message;
+            });
+            throw error;
+        default:
+            throw err;
+    }
+};
 
-const signup_post = async (req, res) => {
+const signInGet = (req, res) => res.render('login');
+const signUpGet = (req, res) => res.render('signup');
+
+const signUpPost = async (req, res) => {
 
     const { name, email, password } = req.body;
     try {
-        const user = await User.create({ name, email, password, lastActive: new Date().toLocaleString('en-US', { hour12: false, hour: '2-digit', minute: 'numeric', second: '2-digit', year: 'numeric', month: '2-digit', 'day': 'numeric' }) });
+        const user = await User.create({ name, email, password, lastActive: new Date().toISOString() });
         const token = createToken(user._id);
         user.password = undefined;
-        res.status(201).json({ token, user: user });
+        res.status(200).json({ token, user: user });
     } catch (err) {
-        const error = handleError(err);
-        res.status(400).json({ error });
+        next()
     }
 }
 
-const login_post = async (req, res) => {
+const signInPost = async (req, res, next) => {
     const { email, password } = req.body;
     try {
         const authUser = await User.login(email, password);
@@ -55,13 +48,17 @@ const login_post = async (req, res) => {
         const token = createToken(authUser._id);
         res.status(200).json({ token, user: authUser });
     } catch (err) {
-        const error = handleError(err);
-        res.status('400').json({ error });
+        next()
     }
+
+
 }
+
+const signOutGet = async (req, res) => {
+    var user = await User.
+        res.status(200).json({ "message": "success" });
+}
+
 module.exports = {
-    login_get,
-    login_post,
-    signup_get,
-    signup_post
+    signInGet, signInPost, signUpGet, signUpPost, signOutGet,
 }
